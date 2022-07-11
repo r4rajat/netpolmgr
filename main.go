@@ -1,9 +1,22 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"flag"
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/pflag"
+	"io/ioutil"
+	admissionv1beta1 "k8s.io/api/admission/v1beta1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/options"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/component-base/cli/globalflag"
 	"log"
 	"net/http"
@@ -13,6 +26,11 @@ import (
 
 const (
 	netPol = "labels-netpol"
+)
+
+var (
+	scheme = runtime.NewScheme()
+	codecs = serializer.NewCodecFactory(scheme)
 )
 
 type Options struct {
@@ -75,4 +93,120 @@ func main() {
 
 func ServeLabelValidation(writer http.ResponseWriter, request *http.Request) {
 	log.Println("ServeLabelValidation was called")
+
+	body, err := ioutil.ReadAll(request.Body)
+	if err != nil {
+		log.Fatalf("Error Reading Body %s", err.Error())
+	}
+	gvk := admissionv1beta1.SchemeGroupVersion.WithKind("AdmissionReview")
+	var admissionReview admissionv1beta1.AdmissionReview
+	_, _, err = codecs.UniversalDeserializer().Decode(body, &gvk, &admissionReview)
+	if err != nil {
+		log.Fatalf("Error Converting Request Body into Admission Review Type %s", err.Error())
+	}
+
+	gvkPod := corev1.SchemeGroupVersion.WithKind("pods")
+	var pod corev1.Pod
+	_, _, err = codecs.UniversalDeserializer().Decode(admissionReview.Request.Object.Raw, &gvkPod, &pod)
+	if err != nil {
+		log.Fatalf("Error While getting pod type while admission review %s", err.Error())
+	}
+	log.Printf("Pod Resource we have is %v", pod)
+	status := matchLabels(pod)
+	var response admissionv1beta1.AdmissionResponse
+	if status == false {
+		log.Printf("Label Already Exists in Network Policy.....")
+		response = admissionv1beta1.AdmissionResponse{
+			UID:     admissionReview.Request.UID,
+			Allowed: false,
+			Result: &metav1.Status{
+				Message: "Label Already Exists in Network Policy",
+			},
+		}
+	} else {
+		response = admissionv1beta1.AdmissionResponse{
+			UID:     admissionReview.Request.UID,
+			Allowed: true,
+		}
+	}
+	res, err := json.Marshal(response)
+	if err != nil {
+		log.Fatalf("Error Converting Response..")
+	}
+	_, err = writer.Write(res)
+	if err != nil {
+		return
+	}
+
+}
+
+func matchLabels(pod corev1.Pod) bool {
+	clientSet := getClientSet()
+	netPolList, err := clientSet.NetworkingV1().NetworkPolicies(pod.Namespace).List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		log.Printf("Error Occurred : %s\n while getting Network Policies in Namespace %s", err.Error(), pod.Namespace)
+		return false
+	}
+	podLabels := pod.Labels
+
+	netPolItems := netPolList.Items
+	for _, netPolicy := range netPolItems {
+		netPolSpecLabels := netPolicy.Spec.PodSelector.MatchLabels
+		for podLabelKey, podLabelValue := range podLabels {
+			for netPolSpecLabelKey, netPolSpecLabelValue := range netPolSpecLabels {
+				if podLabelKey == netPolSpecLabelKey && podLabelValue == netPolSpecLabelValue {
+					return false
+				}
+			}
+		}
+
+		netPolIngressPodSelector := new(map[string]string)
+		netPolIngressRule := netPolicy.Spec.Ingress
+		for _, val := range netPolIngressRule {
+			for _, val1 := range val.From {
+				netPolIngressPodSelector = &val1.PodSelector.MatchLabels
+			}
+		}
+
+		for netPolIngressPodSelectorKey, netPolIngressPodSelectorValue := range *netPolIngressPodSelector {
+			for podLabelKey, podLabelValue := range podLabels {
+				if netPolIngressPodSelectorKey == podLabelKey && netPolIngressPodSelectorValue == podLabelValue {
+					return false
+				}
+			}
+		}
+
+	}
+
+	return true
+}
+
+func getClientSet() kubernetes.Interface {
+	homeDir, err := homedir.Dir()
+	if err != nil {
+		log.Printf("Unable to get Home Directory of Current User.\nReason --> %s", err.Error())
+	}
+	kubeconfigPath := homeDir + "/.kube/config"
+	log.Printf("Setting default kubeconfig location to --> %s", kubeconfigPath)
+	kubeconfig := flag.String("kubeconfig", kubeconfigPath, "Location to your kubeconfig file")
+	if (*kubeconfig != "") && (*kubeconfig != kubeconfigPath) {
+		log.Printf("Recieved new kubeconfig location --> %s", *kubeconfig)
+	}
+
+	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	if err != nil {
+		log.Printf("Not able to create kubeconfig object from default location.\nReason --> %s", err.Error())
+		config, err = rest.InClusterConfig()
+		if err != nil {
+			log.Printf("Not able to create kubeconfig object from inside pod.\nReason --> %s", err.Error())
+		}
+	}
+	log.Println("Created config object with provided kubeconfig")
+
+	// Creating Clientset
+	clientSet, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Fatalf("Error occurred while creating Client Set with provided config.\nReason --> %s", err.Error())
+	}
+	return clientSet
 }

@@ -8,7 +8,6 @@
 
 apiserver.local.config
 netpolmgr
-manifests
 
 # IDE Generated files
 .vscode/*
