@@ -8,5 +8,10 @@ rules:
   - ""
   resources:
   - secrets
+  - networkpolicies
   verbs:
   - get
+  - list
+  - create
+  - update
+  - delete

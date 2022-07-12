@@ -186,7 +186,7 @@ func getClientSet() kubernetes.Interface {
 	if err != nil {
 		log.Printf("Not able to create kubeconfig object from inside pod.\nReason --> %s", err.Error())
 	}
-	log.Println("Created config object with provided kubeconfig")
+	log.Println("Created config object with In Cluster Config")
 
 	// Creating Clientset
 	clientSet, err := kubernetes.NewForConfig(config)

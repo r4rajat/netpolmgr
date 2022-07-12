@@ -9,7 +9,7 @@ spec:
   ports:
   - port: 443
     protocol: TCP
-    targetPort: 443
+    targetPort: 8443
   selector:
     app: netpolmgr
 status:

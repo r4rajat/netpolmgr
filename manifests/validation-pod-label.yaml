@@ -9,7 +9,7 @@ webhooks:
         apiVersions: ["v1"]
         operations:  ["UPDATE", "CREATE"]
         resources:   ["pods"]
-        scope:       "Namespaced"
+        scope:       "*"
     clientConfig:
       service:
         namespace: "default"
