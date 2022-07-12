@@ -105,13 +105,22 @@ func ServeLabelValidation(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	gvkPod := corev1.SchemeGroupVersion.WithKind("pods")
-	var pod corev1.Pod
-	_, _, err = codecs.UniversalDeserializer().Decode(admissionReview.Request.Object.Raw, &gvkPod, &pod)
+	var newPodObject corev1.Pod
+	_, _, err = codecs.UniversalDeserializer().Decode(admissionReview.Request.Object.Raw, &gvkPod, &newPodObject)
 	if err != nil {
 		log.Fatalf("Error While getting pod type while admission review %s", err.Error())
 	}
-	log.Printf("Pod Resource we have is %v", pod)
-	status := matchLabels(pod)
+
+	clientSet := getClientSet()
+	oldPodObject, err := clientSet.CoreV1().Pods(newPodObject.Namespace).Get(context.Background(), newPodObject.Name, metav1.GetOptions{})
+	if err != nil {
+		log.Fatalf("Not able to get Old Pod Details. Reason--> %v", err.Error())
+	}
+
+	log.Printf("Old Pod Object --> %v\n", oldPodObject)
+	log.Printf("Updated Pod Object --> %v\n", newPodObject)
+
+	status := matchLabels(*oldPodObject)
 	var response admissionv1beta1.AdmissionResponse
 	if status == false {
 		log.Printf("Label Already Exists in Network Policy.....")
@@ -148,10 +157,13 @@ func matchLabels(pod corev1.Pod) bool {
 		return false
 	}
 	podLabels := pod.Labels
+	log.Printf("Pod Labels --> %v\n", podLabels)
 
 	netPolItems := netPolList.Items
 	for _, netPolicy := range netPolItems {
+		log.Printf("Netpolicy --> %v\n", netPolicy.Name)
 		netPolSpecLabels := netPolicy.Spec.PodSelector.MatchLabels
+		log.Printf("Spec Labels --> %v\n", netPolSpecLabels)
 		for podLabelKey, podLabelValue := range podLabels {
 			for netPolSpecLabelKey, netPolSpecLabelValue := range netPolSpecLabels {
 				if podLabelKey == netPolSpecLabelKey && podLabelValue == netPolSpecLabelValue {
@@ -167,7 +179,7 @@ func matchLabels(pod corev1.Pod) bool {
 				netPolIngressPodSelector = &val1.PodSelector.MatchLabels
 			}
 		}
-
+		log.Printf("Ingress Labels --> %v\n", *netPolIngressPodSelector)
 		for netPolIngressPodSelectorKey, netPolIngressPodSelectorValue := range *netPolIngressPodSelector {
 			for podLabelKey, podLabelValue := range podLabels {
 				if netPolIngressPodSelectorKey == podLabelKey && netPolIngressPodSelectorValue == podLabelValue {

@@ -5,10 +5,11 @@ metadata:
   name: netpolmgr-role
 rules:
 - apiGroups:
-  - ""
+  - "*"
   resources:
   - secrets
   - networkpolicies
+  - pods
   verbs:
   - get
   - list

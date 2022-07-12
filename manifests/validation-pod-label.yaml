@@ -7,7 +7,7 @@ webhooks:
     rules:
       - apiGroups:   [""]
         apiVersions: ["v1"]
-        operations:  ["UPDATE", "CREATE"]
+        operations:  ["UPDATE"]
         resources:   ["pods"]
         scope:       "*"
     clientConfig:

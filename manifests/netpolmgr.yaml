@@ -19,7 +19,7 @@ spec:
     spec:
       serviceAccountName: netpolmgr-sa
       containers:
-      - image: r4rajat/netpolmgr
+      - image: r4rajat/netpolmgr:latest
         name: netpolmgr
         args:
           - --tls-cert-file=/var/run/webhook/serving-cert/tls.crt
