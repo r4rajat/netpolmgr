@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
-	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/pflag"
 	"io/ioutil"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
@@ -12,11 +10,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/options"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/component-base/cli/globalflag"
 	"log"
 	"net/http"
@@ -96,6 +94,7 @@ func ServeLabelValidation(writer http.ResponseWriter, request *http.Request) {
 
 	body, err := ioutil.ReadAll(request.Body)
 	if err != nil {
+		responsewriters.InternalError(writer, request, err)
 		log.Fatalf("Error Reading Body %s", err.Error())
 	}
 	gvk := admissionv1beta1.SchemeGroupVersion.WithKind("AdmissionReview")
@@ -129,7 +128,8 @@ func ServeLabelValidation(writer http.ResponseWriter, request *http.Request) {
 			Allowed: true,
 		}
 	}
-	res, err := json.Marshal(response)
+	admissionReview.Response = &response
+	res, err := json.Marshal(admissionReview)
 	if err != nil {
 		log.Fatalf("Error Converting Response..")
 	}
@@ -182,24 +182,9 @@ func matchLabels(pod corev1.Pod) bool {
 }
 
 func getClientSet() kubernetes.Interface {
-	homeDir, err := homedir.Dir()
+	config, err := rest.InClusterConfig()
 	if err != nil {
-		log.Printf("Unable to get Home Directory of Current User.\nReason --> %s", err.Error())
-	}
-	kubeconfigPath := homeDir + "/.kube/config"
-	log.Printf("Setting default kubeconfig location to --> %s", kubeconfigPath)
-	kubeconfig := flag.String("kubeconfig", kubeconfigPath, "Location to your kubeconfig file")
-	if (*kubeconfig != "") && (*kubeconfig != kubeconfigPath) {
-		log.Printf("Recieved new kubeconfig location --> %s", *kubeconfig)
-	}
-
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	if err != nil {
-		log.Printf("Not able to create kubeconfig object from default location.\nReason --> %s", err.Error())
-		config, err = rest.InClusterConfig()
-		if err != nil {
-			log.Printf("Not able to create kubeconfig object from inside pod.\nReason --> %s", err.Error())
-		}
+		log.Printf("Not able to create kubeconfig object from inside pod.\nReason --> %s", err.Error())
 	}
 	log.Println("Created config object with provided kubeconfig")
 
