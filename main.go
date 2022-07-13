@@ -116,11 +116,13 @@ func ServeLabelValidation(writer http.ResponseWriter, request *http.Request) {
 	if err != nil {
 		log.Fatalf("Not able to get Old Pod Details. Reason--> %v", err.Error())
 	}
-
+	if oldPodObject.ResourceVersion == newPodObject.ResourceVersion {
+		return
+	}
 	log.Printf("Old Pod Object --> %v\n", oldPodObject)
 	log.Printf("Updated Pod Object --> %v\n", newPodObject)
 
-	status := matchLabels(*oldPodObject)
+	status := matchLabels(*oldPodObject, newPodObject)
 	var response admissionv1beta1.AdmissionResponse
 	if status == false {
 		log.Printf("Label Already Exists in Network Policy.....")
@@ -149,27 +151,35 @@ func ServeLabelValidation(writer http.ResponseWriter, request *http.Request) {
 
 }
 
-func matchLabels(pod corev1.Pod) bool {
+func matchLabels(oldPodObject corev1.Pod, newPodObject corev1.Pod) bool {
 	clientSet := getClientSet()
-	netPolList, err := clientSet.NetworkingV1().NetworkPolicies(pod.Namespace).List(context.Background(), metav1.ListOptions{})
+	netPolList, err := clientSet.NetworkingV1().NetworkPolicies(oldPodObject.Namespace).List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		log.Printf("Error Occurred : %s\n while getting Network Policies in Namespace %s", err.Error(), pod.Namespace)
+		log.Printf("Error Occurred : %s\n while getting Network Policies in Namespace %s", err.Error(), oldPodObject.Namespace)
 		return false
 	}
-	podLabels := pod.Labels
-	log.Printf("Pod Labels --> %v\n", podLabels)
+	oldPodLabels := oldPodObject.Labels
+	newPodLabels := newPodObject.Labels
+
+	log.Printf("Pod Labels --> %v\n", oldPodLabels)
 
 	netPolItems := netPolList.Items
 	for _, netPolicy := range netPolItems {
 		log.Printf("Netpolicy --> %v\n", netPolicy.Name)
 		netPolSpecLabels := netPolicy.Spec.PodSelector.MatchLabels
 		log.Printf("Spec Labels --> %v\n", netPolSpecLabels)
-		for podLabelKey, podLabelValue := range podLabels {
-			for netPolSpecLabelKey, netPolSpecLabelValue := range netPolSpecLabels {
-				if podLabelKey == netPolSpecLabelKey && podLabelValue == netPolSpecLabelValue {
-					return false
+		for podLabelKey, podLabelValue := range oldPodLabels {
+			for newPodLabelKey, newPodLabelValue := range newPodLabels {
+				for netPolSpecLabelKey, netPolSpecLabelValue := range netPolSpecLabels {
+					if newPodLabelKey == podLabelKey && newPodLabelValue != podLabelValue {
+						if podLabelKey == netPolSpecLabelKey && podLabelValue == netPolSpecLabelValue {
+							return false
+						}
+					}
+
 				}
 			}
+
 		}
 
 		netPolIngressPodSelector := new(map[string]string)
@@ -180,10 +190,15 @@ func matchLabels(pod corev1.Pod) bool {
 			}
 		}
 		log.Printf("Ingress Labels --> %v\n", *netPolIngressPodSelector)
-		for netPolIngressPodSelectorKey, netPolIngressPodSelectorValue := range *netPolIngressPodSelector {
-			for podLabelKey, podLabelValue := range podLabels {
-				if netPolIngressPodSelectorKey == podLabelKey && netPolIngressPodSelectorValue == podLabelValue {
-					return false
+
+		for podLabelKey, podLabelValue := range oldPodLabels {
+			for newPodLabelKey, newPodLabelValue := range newPodLabels {
+				for netPolIngressPodSelectorKey, netPolIngressPodSelectorValue := range *netPolIngressPodSelector {
+					if newPodLabelKey == podLabelKey && newPodLabelValue != podLabelValue {
+						if netPolIngressPodSelectorKey == podLabelKey && netPolIngressPodSelectorValue == podLabelValue {
+							return false
+						}
+					}
 				}
 			}
 		}
