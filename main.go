@@ -116,9 +116,7 @@ func ServeLabelValidation(writer http.ResponseWriter, request *http.Request) {
 	if err != nil {
 		log.Fatalf("Not able to get Old Pod Details. Reason--> %v", err.Error())
 	}
-	if oldPodObject.ResourceVersion == newPodObject.ResourceVersion {
-		return
-	}
+
 	log.Printf("Old Pod Object --> %v\n", oldPodObject)
 	log.Printf("Updated Pod Object --> %v\n", newPodObject)
 
@@ -161,7 +159,8 @@ func matchLabels(oldPodObject corev1.Pod, newPodObject corev1.Pod) bool {
 	oldPodLabels := oldPodObject.Labels
 	newPodLabels := newPodObject.Labels
 
-	log.Printf("Pod Labels --> %v\n", oldPodLabels)
+	log.Printf("Old Pod Object Labels --> %v\n", oldPodLabels)
+	log.Printf("Updated Pod Object Labels --> %v\n", newPodLabels)
 
 	netPolItems := netPolList.Items
 	for _, netPolicy := range netPolItems {
