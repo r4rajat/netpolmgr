@@ -128,7 +128,7 @@ func ServeLabelValidation(writer http.ResponseWriter, request *http.Request) {
 			UID:     admissionReview.Request.UID,
 			Allowed: false,
 			Result: &metav1.Status{
-				Message: "Label Already Exists in Network Policy",
+				Message: "Label You Trying to Edit Already Exists in Network Policy, Thus Not Changed",
 			},
 		}
 	} else {
